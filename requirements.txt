@@ -1,0 +1,5 @@
+streamlit
+crewai
+pypdf
+python-docx
+litellm
