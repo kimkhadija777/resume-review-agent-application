@@ -1,4 +1,21 @@
 import os
+
+# --------------------------------------------------
+# CREWAI GROQ CACHE BREAKPOINT FIX
+# --------------------------------------------------
+# CrewAI may add "cache_breakpoint" to messages.
+# Groq does not accept this field in this request path.
+# This disables that injection for the CrewAI cache module.
+
+try:
+    import crewai.llms.cache as crewai_cache
+
+    crewai_cache.mark_cache_breakpoint = lambda message: message
+
+except Exception:
+    pass
+
+
 import streamlit as st
 from pypdf import PdfReader
 from docx import Document
@@ -22,6 +39,7 @@ st.set_page_config(
 # --------------------------------------------------
 
 st.title("📄 Resume Review Agent")
+
 st.write(
     "Upload your resume, enter a job description, "
     "and get an AI-powered review of your skills and gaps."
@@ -29,7 +47,7 @@ st.write(
 
 
 # --------------------------------------------------
-# GET GROQ API KEY
+# GET GROQ API KEY FROM STREAMLIT SECRETS
 # --------------------------------------------------
 
 groq_api_key = st.secrets.get("GROQ_API_KEY")
@@ -55,27 +73,31 @@ model_name = st.sidebar.selectbox(
     [
         "groq/openai/gpt-oss-20b",
         "groq/openai/gpt-oss-120b"
-    ]
+    ],
+    index=0
 )
 
 st.sidebar.info(
-    "The application uses one CrewAI agent "
-    "to parse, compare, and review the resume."
+    "This application uses one CrewAI agent "
+    "for the complete resume review process."
 )
 
 
 # --------------------------------------------------
-# RESUME TEXT EXTRACTION
+# PDF TEXT EXTRACTION
 # --------------------------------------------------
 
 def extract_text_from_pdf(uploaded_file):
-    """Extract text from a PDF resume."""
+    """
+    Extract text from a PDF file.
+    """
 
     reader = PdfReader(uploaded_file)
 
     text = ""
 
     for page in reader.pages:
+
         page_text = page.extract_text()
 
         if page_text:
@@ -84,36 +106,51 @@ def extract_text_from_pdf(uploaded_file):
     return text
 
 
+# --------------------------------------------------
+# DOCX TEXT EXTRACTION
+# --------------------------------------------------
+
 def extract_text_from_docx(uploaded_file):
-    """Extract text from a DOCX resume."""
+    """
+    Extract text from a DOCX file.
+    """
 
     document = Document(uploaded_file)
 
     text = ""
 
     for paragraph in document.paragraphs:
-        text += paragraph.text + "\n"
+
+        if paragraph.text.strip():
+            text += paragraph.text + "\n"
 
     return text
 
 
+# --------------------------------------------------
+# RESUME TEXT EXTRACTION
+# --------------------------------------------------
+
 def extract_resume_text(uploaded_file):
-    """Extract resume text based on file type."""
+    """
+    Detect file type and extract its text.
+    """
 
     file_name = uploaded_file.name.lower()
 
     if file_name.endswith(".pdf"):
+
         return extract_text_from_pdf(uploaded_file)
 
     elif file_name.endswith(".docx"):
+
         return extract_text_from_docx(uploaded_file)
 
-    else:
-        return ""
+    return ""
 
 
 # --------------------------------------------------
-# INPUT SECTION
+# UPLOAD RESUME
 # --------------------------------------------------
 
 st.header("1️⃣ Upload Resume")
@@ -123,6 +160,10 @@ uploaded_resume = st.file_uploader(
     type=["pdf", "docx"]
 )
 
+
+# --------------------------------------------------
+# JOB DESCRIPTION
+# --------------------------------------------------
 
 st.header("2️⃣ Job Description")
 
@@ -144,34 +185,57 @@ review_button = st.button(
 
 
 # --------------------------------------------------
-# RUN RESUME REVIEW
+# MAIN APPLICATION
 # --------------------------------------------------
 
 if review_button:
 
+    # ----------------------------------------------
+    # VALIDATE RESUME
+    # ----------------------------------------------
+
     if uploaded_resume is None:
-        st.warning("Please upload a resume first.")
+
+        st.warning(
+            "Please upload a resume first."
+        )
+
         st.stop()
+
+
+    # ----------------------------------------------
+    # VALIDATE JOB DESCRIPTION
+    # ----------------------------------------------
 
     if not job_description.strip():
-        st.warning("Please enter a job description.")
+
+        st.warning(
+            "Please enter a job description."
+        )
+
         st.stop()
 
 
     # ----------------------------------------------
-    # EXTRACT RESUME
+    # EXTRACT RESUME TEXT
     # ----------------------------------------------
 
-    with st.spinner("Reading your resume..."):
+    with st.spinner("📖 Reading your resume..."):
 
-        resume_text = extract_resume_text(uploaded_resume)
+        resume_text = extract_resume_text(
+            uploaded_resume
+        )
 
+
+    # ----------------------------------------------
+    # CHECK EXTRACTED TEXT
+    # ----------------------------------------------
 
     if not resume_text.strip():
 
         st.error(
-            "I could not extract readable text from the resume. "
-            "Please try another PDF or DOCX file."
+            "I could not extract readable text from "
+            "your resume. Please try another PDF or DOCX file."
         )
 
         st.stop()
@@ -185,6 +249,7 @@ if review_button:
 
         llm = LLM(
             model=model_name,
+            api_key=groq_api_key,
             temperature=0.2
         )
 
@@ -194,128 +259,144 @@ if review_button:
         # ------------------------------------------
 
         resume_agent = Agent(
+
             role="Resume Review Specialist",
 
             goal=(
-                "Review a candidate's resume against a job description, "
-                "identify job-related skill and experience gaps, "
-                "and provide practical resume improvement recommendations."
+                "Review a candidate's resume against a "
+                "job description, identify job-related "
+                "skill and experience gaps, and provide "
+                "practical resume improvement recommendations."
             ),
 
             backstory=(
-                "You are a careful resume review specialist. "
-                "You compare resumes with job descriptions using only "
-                "the information provided. You never invent experience "
-                "or skills."
+                "You are a careful professional resume "
+                "review specialist. You compare resumes "
+                "with job descriptions using only the "
+                "information provided. You never invent "
+                "experience, skills, certifications, or "
+                "qualifications."
             ),
 
             llm=llm,
 
-            verbose=False
+            verbose=False,
+
+            allow_delegation=False
         )
 
 
         # ------------------------------------------
-        # CREATE ONE TASK
+        # CREATE TASK
         # ------------------------------------------
 
         review_task = Task(
 
             description=f"""
-You are reviewing a resume against a job description.
 
-========================
+You are reviewing a candidate resume against a job description.
+
+==================================================
 CANDIDATE RESUME
-========================
+==================================================
 
 {resume_text}
 
 
-========================
+==================================================
 JOB DESCRIPTION
-========================
+==================================================
 
 {job_description}
 
 
-Complete the review in THREE stages.
-
-========================
+==================================================
 STAGE 1 — INPUT PARSING
-========================
+==================================================
 
-Extract:
+First, carefully extract information from both inputs.
 
-1. Important skills mentioned in the job description.
-2. Important technical requirements.
-3. Important soft skills.
-4. Required or preferred experience.
-5. Education or certification requirements.
+From the JOB DESCRIPTION identify:
 
-Also identify the candidate's:
+1. Job title
+2. Technical skills
+3. Programming languages
+4. Libraries and frameworks
+5. AI/ML requirements
+6. Databases or vector stores
+7. Cloud requirements
+8. DevOps requirements
+9. Soft skills
+10. Education requirements
+11. Experience requirements
+12. Certifications if mentioned
 
-1. Technical skills.
-2. Soft skills.
-3. Experience.
-4. Education.
-5. Certifications.
-6. Projects.
+From the RESUME identify:
 
-Only use information that is actually present.
+1. Technical skills
+2. Programming languages
+3. Frameworks
+4. AI/ML skills
+5. Projects
+6. Work experience
+7. Education
+8. Certifications
+9. Soft skills
+10. Other relevant qualifications
 
-If something is not mentioned, write:
 
-"Not stated"
-
-
-========================
+==================================================
 STAGE 2 — GAP ANALYSIS
-========================
+==================================================
 
-Compare the job requirements with the resume.
+Compare the extracted job requirements with the resume.
 
 Identify:
 
 1. Skills clearly present in the resume.
-2. Skills required by the job but not clearly shown in the resume.
+2. Skills required by the job but not clearly evidenced.
 3. Experience requirements that are not clearly demonstrated.
-4. Important job requirements that need stronger evidence.
+4. Requirements that partially match.
+5. Requirements that need stronger evidence.
 
-Do not assume that the candidate has a skill simply because it is related
-to another skill.
+IMPORTANT:
+
+Do NOT assume a skill.
 
 For example:
 
-If the job requires Python and the resume only says HTML,
-do not say that the candidate knows Python.
+If the job requires Python but the resume does not
+mention Python, write:
 
-Use:
+"Python — Not evidenced in the resume."
 
-"Not evidenced in the resume."
+Do not assume the candidate knows Python because
+they have another programming skill.
 
 
-========================
+==================================================
 STAGE 3 — RECOMMENDATIONS
-========================
+==================================================
 
 Provide practical recommendations.
 
 Include:
 
-1. Skills the candidate should learn or demonstrate.
-2. Resume sections that could be improved.
+1. Skills to learn or strengthen.
+2. Existing skills that should be highlighted.
 3. Projects that could strengthen the resume.
-4. Suggestions for improving bullet points.
-5. Keywords from the job description that should be reflected
-   when truthful.
-6. Ways to better demonstrate existing experience.
+4. Suggestions for improving resume bullet points.
+5. Relevant keywords from the job description that
+   could be reflected when truthful.
+6. Suggestions for demonstrating existing experience.
+7. Suggestions for improving project descriptions.
 
 
-========================
-FINAL REPORT FORMAT
-========================
+==================================================
+FINAL REPORT
+==================================================
 
-Use exactly these sections:
+Return the result using these exact sections:
 
 # 1. Job Requirements
 
@@ -334,22 +415,31 @@ Use exactly these sections:
 # 8. Final Summary
 
 
-IMPORTANT RULES:
+==================================================
+IMPORTANT RULES
+==================================================
 
-- Do not invent information.
-- Do not create fake experience.
-- Do not create fake certifications.
-- Do not assume missing skills.
-- Clearly distinguish "not stated" from "not evidenced".
+- Never invent information.
+- Never create fake experience.
+- Never create fake skills.
+- Never create fake certifications.
+- Never assume missing information.
+- Use "Not stated" when information is absent.
+- Use "Not evidenced in the resume" when a job requirement
+  is not demonstrated by the resume.
 - Focus only on job-related qualifications.
 - Do not make hiring or rejection decisions.
 - Do not infer sensitive personal characteristics.
+- Give practical and realistic recommendations.
+- Keep the report clear and beginner-friendly.
 """,
 
             expected_output=(
-                "A structured resume review containing job requirements, "
-                "skills present, skill gaps, experience gaps, strengths, "
-                "recommendations, resume improvements, and a final summary."
+                "A structured resume review containing "
+                "job requirements, skills clearly present, "
+                "skill gaps, experience gaps, strengths, "
+                "improvement recommendations, suggested "
+                "resume improvements, and a final summary."
             ),
 
             agent=resume_agent
@@ -387,7 +477,9 @@ IMPORTANT RULES:
         # DISPLAY RESULT
         # ------------------------------------------
 
-        st.success("✅ Resume review completed!")
+        st.success(
+            "✅ Resume review completed successfully!"
+        )
 
         st.header("📊 Resume Review Report")
 
@@ -399,17 +491,84 @@ IMPORTANT RULES:
         # ------------------------------------------
 
         st.download_button(
+
             label="📥 Download Report",
+
             data=str(result),
+
             file_name="resume_review_report.md",
+
             mime="text/markdown"
         )
 
 
+    # ----------------------------------------------
+    # ERROR HANDLING
+    # ----------------------------------------------
+
     except Exception as e:
 
         st.error(
-            "Something went wrong while running the AI agent."
+            "Something went wrong while running "
+            "the AI agent."
         )
 
         st.exception(e)
+
+2️⃣ "requirements.txt"
+
+I also recommend changing your requirements to pin the main packages rather than letting Streamlit install arbitrary latest versions:
+
+streamlit
+crewai
+pypdf
+python-docx
+litellm
+
+For now, don't change versions randomly. The important fix is the cache-breakpoint workaround above.
+
+3️⃣ "runtime.txt"
+
+Keep:
+
+python-3.11
+
+🔑 Streamlit Secrets
+
+Keep your Streamlit secret exactly like this:
+
+GROQ_API_KEY = "gsk_your_real_api_key_here"
+
+Don't put the real key in GitHub.
+
+Why this fixes your particular error
+
+Your error was:
+
+property 'cache_breakpoint' is unsupported
+
+The important part of the traceback is:
+
+CrewAI
+   ↓
+LiteLLM
+   ↓
+Groq
+   ↓
+cache_breakpoint ❌
+
+The updated code prevents CrewAI's cache module from adding that field:
+
+import crewai.llms.cache as crewai_cache
+
+crewai_cache.mark_cache_breakpoint = lambda message: message
+
+This is a documented workaround for the current CrewAI/Groq issue.
+
+Also, the "RuntimeError: no running event loop" in your traceback is not the main problem. It occurs during CrewAI's execution flow while handling the actual Groq request failure. The Groq "cache_breakpoint" 400 error is the one we need to address.
+
+One more thing
+
+Your selected models are fine: Groq currently lists "openai/gpt-oss-20b" and "openai/gpt-oss-120b" as production models, with 131,072-token context windows.
+
+After replacing "app.py", commit/push the change to GitHub and let Streamlit redeploy. Then test the same DOCX + Junior AI/Python Developer job description again.
