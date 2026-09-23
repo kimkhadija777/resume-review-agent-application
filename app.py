@@ -1,17 +1,12 @@
 import os
 
 # --------------------------------------------------
-# CREWAI GROQ CACHE BREAKPOINT FIX
+# CREWAI / GROQ CACHE FIX
 # --------------------------------------------------
-# CrewAI may add "cache_breakpoint" to messages.
-# Groq does not accept this field in this request path.
-# This disables that injection for the CrewAI cache module.
 
 try:
     import crewai.llms.cache as crewai_cache
-
     crewai_cache.mark_cache_breakpoint = lambda message: message
-
 except Exception:
     pass
 
@@ -47,7 +42,7 @@ st.write(
 
 
 # --------------------------------------------------
-# GET GROQ API KEY FROM STREAMLIT SECRETS
+# GROQ API KEY
 # --------------------------------------------------
 
 groq_api_key = st.secrets.get("GROQ_API_KEY")
@@ -73,8 +68,7 @@ model_name = st.sidebar.selectbox(
     [
         "groq/openai/gpt-oss-20b",
         "groq/openai/gpt-oss-120b"
-    ],
-    index=0
+    ]
 )
 
 st.sidebar.info(
@@ -88,16 +82,11 @@ st.sidebar.info(
 # --------------------------------------------------
 
 def extract_text_from_pdf(uploaded_file):
-    """
-    Extract text from a PDF file.
-    """
-
     reader = PdfReader(uploaded_file)
 
     text = ""
 
     for page in reader.pages:
-
         page_text = page.extract_text()
 
         if page_text:
@@ -111,16 +100,11 @@ def extract_text_from_pdf(uploaded_file):
 # --------------------------------------------------
 
 def extract_text_from_docx(uploaded_file):
-    """
-    Extract text from a DOCX file.
-    """
-
     document = Document(uploaded_file)
 
     text = ""
 
     for paragraph in document.paragraphs:
-
         if paragraph.text.strip():
             text += paragraph.text + "\n"
 
@@ -132,18 +116,13 @@ def extract_text_from_docx(uploaded_file):
 # --------------------------------------------------
 
 def extract_resume_text(uploaded_file):
-    """
-    Detect file type and extract its text.
-    """
 
     file_name = uploaded_file.name.lower()
 
     if file_name.endswith(".pdf"):
-
         return extract_text_from_pdf(uploaded_file)
 
     elif file_name.endswith(".docx"):
-
         return extract_text_from_docx(uploaded_file)
 
     return ""
@@ -190,34 +169,17 @@ review_button = st.button(
 
 if review_button:
 
-    # ----------------------------------------------
-    # VALIDATE RESUME
-    # ----------------------------------------------
-
     if uploaded_resume is None:
-
-        st.warning(
-            "Please upload a resume first."
-        )
-
+        st.warning("Please upload a resume first.")
         st.stop()
-
-
-    # ----------------------------------------------
-    # VALIDATE JOB DESCRIPTION
-    # ----------------------------------------------
 
     if not job_description.strip():
-
-        st.warning(
-            "Please enter a job description."
-        )
-
+        st.warning("Please enter a job description.")
         st.stop()
 
 
     # ----------------------------------------------
-    # EXTRACT RESUME TEXT
+    # EXTRACT RESUME
     # ----------------------------------------------
 
     with st.spinner("📖 Reading your resume..."):
@@ -226,10 +188,6 @@ if review_button:
             uploaded_resume
         )
 
-
-    # ----------------------------------------------
-    # CHECK EXTRACTED TEXT
-    # ----------------------------------------------
 
     if not resume_text.strip():
 
@@ -242,7 +200,7 @@ if review_button:
 
 
     # ----------------------------------------------
-    # CREATE CREWAI LLM
+    # CREATE LLM
     # ----------------------------------------------
 
     try:
@@ -255,7 +213,7 @@ if review_button:
 
 
         # ------------------------------------------
-        # CREATE ONE AGENT
+        # ONE CREWAI AGENT
         # ------------------------------------------
 
         resume_agent = Agent(
@@ -287,7 +245,7 @@ if review_button:
 
 
         # ------------------------------------------
-        # CREATE TASK
+        # ONE TASK
         # ------------------------------------------
 
         review_task = Task(
@@ -314,7 +272,7 @@ JOB DESCRIPTION
 STAGE 1 — INPUT PARSING
 ==================================================
 
-First, carefully extract information from both inputs.
+Extract the important information from both inputs.
 
 From the JOB DESCRIPTION identify:
 
@@ -322,21 +280,22 @@ From the JOB DESCRIPTION identify:
 2. Technical skills
 3. Programming languages
 4. Libraries and frameworks
-5. AI/ML requirements
+5. AI and machine learning requirements
 6. Databases or vector stores
 7. Cloud requirements
 8. DevOps requirements
 9. Soft skills
 10. Education requirements
 11. Experience requirements
-12. Certifications if mentioned
+12. Certifications
+
 
 From the RESUME identify:
 
 1. Technical skills
 2. Programming languages
 3. Frameworks
-4. AI/ML skills
+4. AI and machine learning skills
 5. Projects
 6. Work experience
 7. Education
@@ -349,7 +308,7 @@ From the RESUME identify:
 STAGE 2 — GAP ANALYSIS
 ==================================================
 
-Compare the extracted job requirements with the resume.
+Compare the job requirements with the resume.
 
 Identify:
 
@@ -359,19 +318,17 @@ Identify:
 4. Requirements that partially match.
 5. Requirements that need stronger evidence.
 
+
 IMPORTANT:
 
 Do NOT assume a skill.
 
-For example:
-
-If the job requires Python but the resume does not
-mention Python, write:
+For example, if the job requires Python but
+Python is not mentioned in the resume, write:
 
 "Python — Not evidenced in the resume."
 
-Do not assume the candidate knows Python because
-they have another programming skill.
+Do not assume the candidate knows Python.
 
 
 ==================================================
@@ -386,8 +343,8 @@ Include:
 2. Existing skills that should be highlighted.
 3. Projects that could strengthen the resume.
 4. Suggestions for improving resume bullet points.
-5. Relevant keywords from the job description that
-   could be reflected when truthful.
+5. Relevant job-description keywords that could be
+   reflected when truthful.
 6. Suggestions for demonstrating existing experience.
 7. Suggestions for improving project descriptions.
 
@@ -396,7 +353,7 @@ Include:
 FINAL REPORT
 ==================================================
 
-Return the result using these exact sections:
+Return the result using these sections:
 
 # 1. Job Requirements
 
@@ -425,13 +382,13 @@ IMPORTANT RULES
 - Never create fake certifications.
 - Never assume missing information.
 - Use "Not stated" when information is absent.
-- Use "Not evidenced in the resume" when a job requirement
-  is not demonstrated by the resume.
+- Use "Not evidenced in the resume" when a requirement
+  is not demonstrated.
 - Focus only on job-related qualifications.
 - Do not make hiring or rejection decisions.
 - Do not infer sensitive personal characteristics.
 - Give practical and realistic recommendations.
-- Keep the report clear and beginner-friendly.
+- Keep the report clear and useful.
 """,
 
             expected_output=(
@@ -502,10 +459,6 @@ IMPORTANT RULES
         )
 
 
-    # ----------------------------------------------
-    # ERROR HANDLING
-    # ----------------------------------------------
-
     except Exception as e:
 
         st.error(
@@ -514,61 +467,3 @@ IMPORTANT RULES
         )
 
         st.exception(e)
-
-2️⃣ "requirements.txt"
-
-I also recommend changing your requirements to pin the main packages rather than letting Streamlit install arbitrary latest versions:
-
-streamlit
-crewai
-pypdf
-python-docx
-litellm
-
-For now, don't change versions randomly. The important fix is the cache-breakpoint workaround above.
-
-3️⃣ "runtime.txt"
-
-Keep:
-
-python-3.11
-
-🔑 Streamlit Secrets
-
-Keep your Streamlit secret exactly like this:
-
-GROQ_API_KEY = "gsk_your_real_api_key_here"
-
-Don't put the real key in GitHub.
-
-Why this fixes your particular error
-
-Your error was:
-
-property 'cache_breakpoint' is unsupported
-
-The important part of the traceback is:
-
-CrewAI
-   ↓
-LiteLLM
-   ↓
-Groq
-   ↓
-cache_breakpoint ❌
-
-The updated code prevents CrewAI's cache module from adding that field:
-
-import crewai.llms.cache as crewai_cache
-
-crewai_cache.mark_cache_breakpoint = lambda message: message
-
-This is a documented workaround for the current CrewAI/Groq issue.
-
-Also, the "RuntimeError: no running event loop" in your traceback is not the main problem. It occurs during CrewAI's execution flow while handling the actual Groq request failure. The Groq "cache_breakpoint" 400 error is the one we need to address.
-
-One more thing
-
-Your selected models are fine: Groq currently lists "openai/gpt-oss-20b" and "openai/gpt-oss-120b" as production models, with 131,072-token context windows.
-
-After replacing "app.py", commit/push the change to GitHub and let Streamlit redeploy. Then test the same DOCX + Junior AI/Python Developer job description again.
